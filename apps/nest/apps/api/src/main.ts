@@ -12,8 +12,9 @@ if (localDev) {
     const app = await NestFactory.create(ApiModule)
     await setupNestApp(app)
     setupSwaggerUI(app)
-    await app.listen(process.env.port ?? 4000)
-    console.log(`Server is running at http://localhost:${process.env.port ?? 4000}/docs`)
+    const port = process.env.PORT ?? process.env.port ?? 4000
+    await app.listen(port)
+    console.log(`Server is running at http://localhost:${port}/docs`)
   }
 
   bootstrap()
