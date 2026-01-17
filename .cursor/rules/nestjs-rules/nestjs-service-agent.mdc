@@ -1,0 +1,183 @@
+description: "This rule defines standards for NestJS services. Apply when implementing business logic, data access (especially with Prisma), or any service layer functionality. Ensures separation of concerns, consistent data handling (including safe transformation to Entities), error management, and proper use of user context for operations."
+globs: apps/nest/libs/**/*.service.ts
+alwaysApply: false
+---
+
+# NestJS Service Standards
+
+## Critical Rules
+
+- **Purpose:** Services encapsulate the core business logic of a feature, including data manipulation, interaction with the database (via Prisma), coordination with other services, and external API calls.
+- **Location & Naming:** Service files MUST be placed in the `libs/{feature}/src/` directory and named `{feature-name}.service.ts`.
+- **Injectable:** Services MUST be decorated with `@Injectable()` to allow for dependency injection.
+- **Constructor Injection:** Dependencies, primarily `PrismaService` and potentially other services, MUST be injected via the constructor and marked `private readonly`.
+- **Prisma Interaction:** Services are the primary layer for interacting with `PrismaService` to perform database operations (CRUD).
+- **DTO Usage:** Service methods typically receive validated DTOs (Create, Update, Query) from the controller.
+- **User Context:**
+    - `create` methods MUST accept the `user: User` object to associate the created entity with the user's profile (`data: { ...dto, profileId: user.profileId }`).
+    - `update` and `delete` methods MUST accept the `user: User` object and use `user.profileId` in the `where` clause to ensure users can only modify/delete their own resources (`where: { id: id, profileId: user.profileId }`).
+- **Return Type - Entity Instances:**
+    - Services MUST **NEVER** return plain JavaScript objects directly from Prisma (or other data sources) by default.
+    - Results MUST be transformed into instances of the corresponding Entity class (e.g., `TodoEntity`) using the transformation helpers from `@app/helper/transform.helper`:
+        - `th.toInstanceSafe(EntityClass, data)` for single objects.
+        - `th.toInstancesSafe(EntityClass, dataArray)` for arrays of objects.
+    - **Exception:** In rare cases where a plain object response is strictly necessary, the `@TransformerExposeAll()` decorator MUST be applied to the specific *controller route handler* that calls the service method. The service method itself should still ideally return a structured object or Entity instance if possible, but the decorator controls the final serialization behavior at the controller level.
+- **Error Handling:**
+    - Use Prisma's `*OrThrow` methods (e.g., `findUniqueOrThrow`, `findFirstOrThrow`) whenever an operation is expected to find a record and should fail explicitly if it doesn't.
+    - Rely on the global `AllExceptionsFilter` to catch errors thrown by Prisma (including those from `*OrThrow` methods or errors like `P2025` if an update/delete affects no rows due to the `where` clause) and convert them into appropriate NestJS `HttpException`s (e.g., `NotFoundException`).
+    - Avoid adding `try...catch` blocks within services *specifically* to handle Prisma's `P2025` error, as this is handled globally.
+    - Custom `try...catch` blocks may still be used for other specific error handling or logging logic if required.
+- **Single Responsibility:** Keep services focused on the business logic of their specific domain. Complex shared logic should be extracted into the `@app/shared` module.
+- **Module Provider:** Services MUST be listed in the `providers` array of their corresponding NestJS module (`{feature-name}.module.ts`). Export the service if it needs to be used by other modules.
+
+## Examples
+
+<example>
+  ```typescript
+  // In libs/todo/src/todo.service.ts
+  import { Injectable } from '@nestjs/common'; // No longer need NotFoundException here
+  import { PrismaService } from 'nestjs-prisma';
+  import { CreateTodoDto } from './dtos/create-todo.dto';
+  import { UpdateTodoDto } from './dtos/update-todo.dto';
+  import { QueryTodoDto } from './dtos/query-todo.dto';
+  import { User } from '@prisma/client';
+  import { th } from '@app/helper/transform.helper';
+  import { TodoEntity } from './entities/todo.entity';
+
+  @Injectable()
+  export class TodoService {
+    constructor(private readonly prisma: PrismaService) {}
+
+    async getTodos(queryTodoDto: QueryTodoDto): Promise<TodoEntity[]> {
+      const { select, include, where, sort, take, skip } = queryTodoDto;
+      const todos = await this.prisma.todo.findMany({
+        where,
+        orderBy: sort,
+        take,
+        skip,
+        ...(select
+          ? { select: Object.fromEntries(select.map((key) => [key, true])) }
+          : include
+            ? { include: Object.fromEntries(include.map((key) => [key, true])) }
+            : {}),
+      });
+      return th.toInstancesSafe(TodoEntity, todos);
+    }
+
+    async getTodo(id: bigint): Promise<TodoEntity> {
+      // Use *OrThrow - global filter handles the exception if not found
+      const todo = await this.prisma.todo.findUniqueOrThrow({
+        where: { id },
+      });
+      return th.toInstanceSafe(TodoEntity, todo);
+    }
+
+    async createTodo(dto: CreateTodoDto, user: User): Promise<TodoEntity> {
+      const todo = await this.prisma.todo.create({
+        data: {
+          ...dto,
+          profileId: user.profileId,
+        },
+      });
+      return th.toInstanceSafe(TodoEntity, todo);
+    }
+
+    async updateTodo(id: bigint, dto: UpdateTodoDto, user: User): Promise<TodoEntity> {
+      // Prisma's update will implicitly handle the 'where' including profileId.
+      // If the record doesn't exist or doesn't match profileId, it might throw an error
+      // (depending on Prisma version/config) or simply update 0 rows.
+      // The global filter handles Prisma errors if they occur.
+      // Consider a findFirstOrThrow check beforehand if explicit confirmation is needed.
+      const todo = await this.prisma.todo.update({
+        where: { 
+          id,
+          profileId: user.profileId // Ensure user owns the todo
+        },
+        data: dto,
+      });
+      // If update didn't find/match, it might throw P2025, handled globally.
+      // We transform assuming success.
+      return th.toInstanceSafe(TodoEntity, todo);
+    }
+
+    async deleteTodo(id: bigint, user: User): Promise<void> {
+      // Similar to update, delete uses the compound where clause.
+      // If the record doesn't exist or match profileId, Prisma might throw P2025 
+      // (handled globally) or silently delete 0 rows.
+      await this.prisma.todo.delete({
+        where: { 
+          id, 
+          profileId: user.profileId // Ensure user owns the todo
+        },
+      });
+      // No return value needed or transform needed if void
+    }
+  }
+  ```
+</example>
+
+<example type="invalid">
+  ```typescript
+  // Bad Example: Returns plain object by default, adds redundant P2025 handling
+  import { Injectable, NotFoundException } from '@nestjs/common'; // Unnecessary import
+  import { PrismaService } from 'nestjs-prisma';
+  import { CreateTodoDto } from './dtos/create-todo.dto';
+  import { UpdateTodoDto } from './dtos/update-todo.dto';
+  import { User, Todo } from '@prisma/client';
+  import { th } from '@app/helper/transform.helper';
+  import { TodoEntity } from './entities/todo.entity';
+
+  @Injectable()
+  export class BadTodoService {
+    constructor(private readonly prisma: PrismaService) {}
+
+    async getTodo(id: bigint): Promise<Todo | null> { // Returning Prisma type
+      const todo = await this.prisma.todo.findUnique({
+        where: { id },
+      });
+      // INCORRECT: Returning plain object without transformation by default
+      return todo;
+    }
+
+    async createTodo(dto: CreateTodoDto, user: User): Promise<Todo> { // Returning Prisma type
+      const todo = await this.prisma.todo.create({
+        data: { ...dto, profileId: user.profileId },
+      });
+       // INCORRECT: Returning plain object without transformation by default
+      return todo;
+    }
+
+    async updateTodo(id: bigint, dto: UpdateTodoDto, user: User): Promise<TodoEntity> {
+      try {
+        const todo = await this.prisma.todo.update({
+          where: { id, profileId: user.profileId },
+          data: dto,
+        });
+        // INCORRECT: Still transforms, but the try/catch is redundant
+        return th.toInstanceSafe(TodoEntity, todo);
+      } catch (error) {
+        // INCORRECT: Redundant handling of P2025, should rely on global filter
+        if (error.code === 'P2025') {
+          throw new NotFoundException(`Todo with ID ${id} not found or not owned by user.`);
+        }
+        throw error;
+      }
+    }
+    
+    async deleteTodo(id: bigint, user: User): Promise<void> {
+       try {
+           await this.prisma.todo.delete({ 
+               where: { id, profileId: user.profileId } 
+           });
+       } catch (error) {
+            // INCORRECT: Redundant handling of P2025
+           if (error.code === 'P2025') {
+             throw new NotFoundException(`Todo with ID ${id} not found or not owned by user.`);
+           }
+           throw error;
+       }
+    }
+  }
+  ```
+</example>
+```

@@ -1,0 +1,199 @@
+---
+description: "This rule defines standards for NestJS controllers based on project conventions. It should be applied when creating, modifying, or reviewing controller code. The rule ensures consistent controller structure, proper route handling, adherence to REST principles, correct dependency injection, Swagger documentation, and inclusion in the module."
+globs: apps/nest/libs/**/*.controller.ts
+alwaysApply: false
+---
+
+# NestJS Controller Guidelines
+
+## Critical Rules
+
+- **Scope:** Controllers MUST only define routes, handle request/response cycles, perform input validation (via DTOs), manage caching, and coordinate calls to services.
+- **Business Logic:** Controllers MUST NOT contain business logic. All business logic MUST be delegated to injectable services.
+- **File Naming:** Controller files MUST be named following the pattern `{feature-name}.controller.ts`.
+- **Module Structure:**
+    - Typically, one main controller per domain module for the primary route (e.g., `/feature`).
+    - Additional controllers can be created for secondary or nested routes if needed.
+- **Module Import:** Controllers MUST be imported and declared in the `controllers` array of their corresponding NestJS module (`{feature-name}.module.ts`). Failure to do so will result in the controller not being recognized by the application.
+- **Decorators:**
+    - Use the `@Controller('{route-prefix}')` decorator to define the base route for the controller.
+    - Use the `@ApiTags('{FeatureName}')` decorator for Swagger UI grouping. Use the capitalized feature name.
+- **Constructor:** Inject required services (like `{FeatureName}Service`) using the constructor. Mark services as `private readonly`.
+- **Route Handlers:**
+    - Use standard HTTP method decorators (`@Get()`, `@Post()`, `@Put()`, `@Patch()`, `@Delete()`) following REST principles.
+    - Specify specific route paths within decorators if needed (e.g., `@Get(':id')`). Avoid verbs in route paths (e.g., use `@Get(':id')` instead of `@Get('/get-one/:id')`).
+- **Request Data:**
+    - Use `@Param('{paramName}', {Pipe})` to access route parameters (e.g., `@Param('id', ParseBigIntPipe)`). Use appropriate pipes like `ParseBigIntPipe` for ID parameters.
+    - Use `@Body()` to access the request body, always binding to a validated DTO class.
+    - Use `@Query()` to access query parameters, binding to a Query DTO class. Use the custom `@RawQuery()` decorator when complex or dynamic query parameters make a standard Query DTO impractical (as seen in `todo.controller.ts`).
+    - Use the custom `@CurUser()` decorator to inject the current authenticated user object when needed (especially for create, update, delete operations).
+- **Responses & Swagger:**
+    - Use `@ApiOperation({ summary: 'Endpoint description' })` to describe the endpoint's purpose in Swagger.
+    - Use `@ApiOkResponse({ type: () => EntityName, isArray: boolean })` for successful GET/PUT/PATCH/DELETE responses.
+    - Use `@ApiCreatedResponse({ type: () => EntityName })` for successful POST responses.
+    - Reference the appropriate Entity class (e.g., `FeatureEntity`) in response decorators.
+    - Use `@ApiBearerAuth()` for routes requiring authentication.
+- **Guards & Interceptors:**
+    - Apply necessary guards using `@UseGuards()`, typically `@UseGuards(JwtGuard)` for authenticated routes. Add other guards (`RolesGuard`, custom guards) as needed.
+    - Apply relevant interceptors using `@UseInterceptors()`. Always use the custom `AppCacheInterceptor` for caching, never NestJS's built-in `CacheInterceptor`.
+    - Configure caching using `@CacheTTL(milliseconds)` and `@AppCacheKey(keyFunction | string)`.
+- **Service Interaction:** Controller methods should primarily delegate tasks to injected service methods. Pass the `user` object (obtained via `@CurUser()`) to service methods (create, update, delete) that require it for authorization or data association.
+- **Return Types:** Controller methods should return the result from the service call, typically a domain Entity or an array of Entities.
+
+## HTTP Method and Decorator Reference
+
+| Decorator                    | Purpose                     | Usage Guidelines                                                                  |
+| ---------------------------- | --------------------------- | --------------------------------------------------------------------------------- |
+| `@Get()`                     | Read operations             | Use for retrieving resources without side effects                                 |
+| `@Post()`                    | Create operations           | Use for creating new resources                                                    |
+| `@Put()`                     | Full update operations      | Use for replacing entire resources                                                |
+| `@Patch()`                   | Partial update operations   | Use for partial resource updates                                                  |
+| `@Delete()`                  | Delete operations           | Use for removing resources                                                        |
+| `@UseGuards(JwtGuard)`       | Authentication              | Require user authentication for protected routes                                  |
+| `@UseInterceptors(AppCacheInterceptor)` | Response caching | Enable caching for read operations (always use `AppCacheInterceptor`)                |
+| `@CacheTTL(milliseconds)`    | Cache duration              | Set time-to-live for cached responses in milliseconds                             |
+| `@AppCacheKey(keyFn|string)` | Dynamic/Static cache key    | Define custom function or string to generate unique cache keys                      |
+| `@Query()`                   | Standard Query Params       | Use with a validated Query DTO for standard query parameters                      |
+| `@RawQuery()`                | Raw query access            | Use only when Query DTO is impractical (dynamic fields) with documented reason    |
+| `@CurUser()`                 | Current user                | Access authenticated user context                                                 |
+| `@ExcludeConfirm()`          | Skip email confirmation     | Allow route access without email confirmation                                     |
+| `@ExcludeProfile()`          | Skip profile requirement    | Allow route access without user profile                                           |
+| `@Roles('role1', 'role2')`   | Role-based access           | Restrict access to users with specific roles (requires `RolesGuard`)                |
+| `@TransformerExposeAll()`    | Unrestricted response       | Allow returning all properties without restrictions (use with caution)              |
+
+## Examples
+
+<example>
+  ```typescript
+  // In libs/feature/src/feature.controller.ts
+  import { ParseBigIntPipe } from '@app/core/pipes/parse-bigint.pipe';
+  import { CreateFeatureDto } from './dtos/create-feature.dto';
+  import { FeatureService } from './feature.service';
+  import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, UseInterceptors } from '@nestjs/common';
+  import { UpdateFeatureDto } from './dtos/update-feature.dto';
+  import { QueryFeatureDto } from './dtos/query-feature.dto';
+  import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+  import { JwtGuard } from '@app/auth/guards/jwt.guard';
+  import { FeatureEntity } from './entities/feature.entity';
+  import { CurUser } from '@app/core/decorators/user.decorator';
+  import { User } from '@prisma/client';
+  import { RawQuery } from '@app/core/decorators/query.decorator'; // Use RawQuery like todo.controller
+  import { CacheTTL } from '@nestjs/cache-manager'; // Added CacheTTL
+  import { AppCacheInterceptor } from '@app/core/interceptors/app-cache-interceptor'; // Added AppCacheInterceptor
+  import { AppCacheKey } from '@app/core/decorators/app-cache-key.decorator'; // Added AppCacheKey
+
+  @Controller('feature') // Correct route prefix
+  @ApiTags('Feature')    // Correct Swagger tag
+  export class FeatureController {
+    constructor(private readonly featureService: FeatureService) {} // Service injected
+
+    @Get()
+    @ApiOperation({ summary: 'Get all features based on query' }) // Added ApiOperation
+    @ApiBearerAuth()
+    @ApiOkResponse({ type: () => FeatureEntity, isArray: true }) // Correct response type
+    @UseGuards(JwtGuard) // Guard applied
+    @CacheTTL(5000) // Added CacheTTL
+    @UseInterceptors(AppCacheInterceptor) // Added AppCacheInterceptor
+    getFeatures(@RawQuery() queryFeatureDto: QueryFeatureDto) { // Use RawQuery, binding to DTO
+      return this.featureService.getFeatures(queryFeatureDto); // Delegate to service
+    }
+
+    @Get(':id')
+    @ApiOperation({ summary: 'Get a specific feature by ID' }) // Added ApiOperation
+    @ApiBearerAuth()
+    @ApiOkResponse({ type: () => FeatureEntity })
+    @UseGuards(JwtGuard)
+    @CacheTTL(5000) // Added CacheTTL
+    @AppCacheKey((req) => `feature-${req.params.id}`) // Added AppCacheKey
+    @UseInterceptors(AppCacheInterceptor) // Added AppCacheInterceptor
+    getFeature(@Param('id', ParseBigIntPipe) id: bigint) { // Param with Pipe
+      return this.featureService.getFeature(id); // Delegate to service
+    }
+
+    @Post()
+    @ApiOperation({ summary: 'Create a new feature' }) // Added ApiOperation
+    @ApiBearerAuth()
+    @ApiCreatedResponse({ type: () => FeatureEntity }) // Use ApiCreatedResponse for POST
+    @UseGuards(JwtGuard)
+    createFeature(@Body() createFeatureDto: CreateFeatureDto, @CurUser() user: User) { // Body DTO and User decorator
+      return this.featureService.createFeature(createFeatureDto, user); // Delegate to service, passing user
+    }
+
+    @Put(':id')
+    @ApiOperation({ summary: 'Update an existing feature' }) // Added ApiOperation
+    @ApiBearerAuth()
+    @ApiOkResponse({ type: () => FeatureEntity }) // Use ApiOkResponse for PUT
+    @UseGuards(JwtGuard)
+    updateFeature(@Param('id', ParseBigIntPipe) id: bigint, @Body() updateFeatureDto: UpdateFeatureDto, @CurUser() user: User) {
+      return this.featureService.updateFeature(id, updateFeatureDto, user); // Delegate to service, passing user
+    }
+
+    @Delete(':id')
+    @ApiOperation({ summary: 'Delete a feature' }) // Added ApiOperation
+    @ApiBearerAuth()
+    @ApiOkResponse({ type: () => FeatureEntity }) // Use ApiOkResponse for DELETE (optional, could be 204 No Content)
+    @UseGuards(JwtGuard)
+    deleteFeature(@Param('id', ParseBigIntPipe) id: bigint, @CurUser() user: User) {
+      return this.featureService.deleteFeature(id, user); // Delegate to service, passing user
+    }
+  }
+
+  // In libs/feature/src/feature.module.ts
+  import { Module } from '@nestjs/common';
+  import { FeatureController } from './feature.controller'; // Controller imported
+  import { FeatureService } from './feature.service';
+
+  @Module({
+    controllers: [FeatureController], // Controller declared in the module
+    providers: [FeatureService],
+    // exports: [FeatureService] // Export service if needed by other modules
+  })
+  export class FeatureModule {}
+  ```
+</example>
+
+<example type="invalid">
+  ```typescript
+  // In libs/feature/src/MyFeatureHandler.ts // Incorrect file naming
+  import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+  import { FeatureService } from './feature.service';
+  import { CreateFeatureDto } from './dtos/create-feature.dto';
+  import { User } from '@prisma/client';
+  import { ApiTags } from '@nestjs/swagger'; // Missing other Swagger decorators
+
+  @Controller() // Missing route prefix
+  @ApiTags('feature') // Incorrect casing
+  export class MyFeatureHandler { // Incorrect class naming convention
+    // Missing constructor injection for FeatureService
+
+    @Get('/get-all') // Avoid verbs in route paths
+    getAll() {
+      // Logic should be in the service
+    }
+
+    @Post()
+    // Missing @ApiOkResponse, @ApiBearerAuth, @UseGuards
+    create(@Body() data: CreateFeatureDto /* Missing @CurUser */ ) {
+      // Missing user parameter for service call
+      // Direct implementation instead of calling service
+    }
+
+    @Get(':featureId') // Inconsistent parameter naming ('featureId' vs 'id')
+    // Missing @ApiOkResponse, @ApiBearerAuth, @UseGuards
+    getOne(@Param('featureId') id: string /* Missing ParseBigIntPipe */) {
+       // ...
+    }
+  }
+
+  // In libs/feature/src/feature.module.ts
+  import { Module } from '@nestjs/common';
+  import { FeatureService } from './feature.service';
+  // Missing import for MyFeatureHandler
+
+  @Module({
+    controllers: [], // Controller not declared
+    providers: [FeatureService],
+  })
+  export class FeatureModule {}
+  ```
+</example> 

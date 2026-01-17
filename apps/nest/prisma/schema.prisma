@@ -1,0 +1,100 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        BigInt  @id @default(autoincrement())
+  profileId BigInt?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  username         String
+  name             String?
+  password         String?
+  jwtValidFrom     DateTime     @default(now()) // support revoke token
+  confirmationHash String?
+  provider         UserProvider // username, email, apple, google...
+  profile          Profile?     @relation(fields: [profileId], references: [id])
+  lastLoginAt      DateTime?
+  blocked          Boolean      @default(false)
+  confirmed        Boolean      @default(false)
+  role             Role         @default(USER)
+
+  verifyCode      String?   @unique
+  verifyCodeCount Int       @default(0)
+  verifyCreatedAt DateTime?
+
+  walletAddress String? @unique
+  /**
+   * Network identifier for blockchain networks. For networks that don't have a standard chainId
+   * (such as Solana, Sui, etc.), the networkId values will be self-defined within this project.
+   */
+  networkId Int? 
+
+  // relations
+  @@unique([username, provider])
+}
+
+enum UserProvider {
+  USERNAME
+  LOCAL // email
+  google
+  apple
+  facebook
+  wallet
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+model Profile {
+  id BigInt @id @default(autoincrement())
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  dob       DateTime?
+
+  name          String
+  avatar        String?
+  email         String?
+
+  // relations
+  users User[]
+  todos Todo[]
+}
+
+enum TodoStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model Todo {
+  id BigInt @id @default(autoincrement())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  title       String
+  description String?
+  status      TodoStatus @default(TODO)
+
+  profileId BigInt
+  profile   Profile @relation(fields: [profileId], references: [id])
+}

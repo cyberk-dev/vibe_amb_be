@@ -1,0 +1,32 @@
+{
+  "name": "cdk",
+  "version": "0.1.0",
+  "bin": {
+    "cdk": "bin/cdk.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk",
+    "dev": "",
+    "bootstrap:dev": "cdk bootstrap --app \"npx ts-node --prefer-ts-exts bin/cdk.dev.ts\" --profile cyberk",
+    "deploy:dev:local": "dotenv -e .env.dev -- cdk deploy --require-approval never --app \"npx ts-node --prefer-ts-exts bin/cdk.dev.ts\" --profile cyberk --outputs-file ./cdk-dev-outputs.json",
+    "deploy:dev:quick": "cd ../nest && pnpm build && cd ../cdk && yarn deploy:dev:local"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "20.11.30",
+    "aws-cdk": "^2.178.2",
+    "dotenv-cli": "^8.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.4.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.136.0",
+    "constructs": "^10.0.0",
+    "source-map-support": "^0.5.21"
+  }
+}

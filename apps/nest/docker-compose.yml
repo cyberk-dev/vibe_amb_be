@@ -1,0 +1,26 @@
+name: cyberk-local
+# Set the version of docker compose to use
+version: '0.0.1'
+
+# The containers that compose the project
+services:
+  postgres:
+    image: postgres:17
+    container_name: postgres
+    ports:
+      - '5403:5432'
+    environment:
+      POSTGRES_USER: cyberk
+      POSTGRES_PASSWORD: cyberk
+      POSTGRES_DB: cyberk
+  redis:
+    image: redis/redis-stack:latest
+    container_name: redis
+    ports:
+      - "6849:6379"
+      - "8104:8001"
+    expose:
+      - "6379"
+    environment:
+      CLUSTER_ONLY: true
+      IP: 0.0.0.0

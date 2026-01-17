@@ -1,0 +1,49 @@
+---
+description: ""
+globs: ""
+alwaysApply: true
+---
+
+# Technical Implementation Template Guide
+
+## Critical Rules
+
+- Always analyze user prompts to identify the technical task they want to implement
+- Check for corresponding implementation guides in the `.cursor/guides/` directory
+- Follow the specific guide's implementation steps and best practices
+- If no guide exists, suggest creating one for future reference
+- For each implementation:
+  1. Analyze requirements and constraints
+  2. Confirm implementation details with user
+  3. Follow guide-specific steps
+  4. Document any deviations or extensions
+
+## Implementation Guides
+
+Current guides and their triggers:
+
+1. **Warmup Implementation** (`.cursor/guides/warmup.md`)
+   - Trigger: User wants to implement Lambda warmup
+   - Keywords: "warmup", "cold start", "lambda warming"
+   - Action: Follow warmup.md guidelines for implementation
+
+## Examples
+
+<example>
+User: "I want to add warmup to my API Lambda"
+Action: 
+1. Identify warmup implementation request
+2. Reference .cursor/guides/warmup.md
+3. Follow implementation steps:
+   - Add CDK warmup configuration
+   - Analyze and suggest concurrency
+   - Add warmup handler logic
+</example>
+
+<example type="invalid">
+User: "I want to add warmup to my Lambda"
+Action: Immediately implementing without:
+- Checking .cursor/guides/warmup.md guide
+- Analyzing concurrency requirements
+- Following standardized implementation
+</example> 

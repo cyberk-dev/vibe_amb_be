@@ -1,0 +1,79 @@
+---
+description: "Defines the high-level architectural patterns and best practices for this NestJS project, focusing on modularity, serverless deployment, and maintainability. Apply when designing new features, structuring modules/libraries, or refactoring existing code."
+globs: apps/nest/**/*.*
+alwaysApply: false
+---
+
+# NestJS Project Architecture Standards
+
+## Core Principles
+
+- **Modularity:** The application is built using a modular architecture, leveraging NestJS libraries (`libs`) for clear separation of concerns.
+- **Serverless Deployment:** Applications under `apps/` are designed to be deployed as individual serverless functions (e.g., AWS Lambda), making bundle size optimization critical.
+- **Domain-Driven:** Business logic is organized into domain-specific libraries.
+- **Explicit Imports:** Direct file imports are mandatory to support tree-shaking and minimize bundle size.
+- **Clear Contracts:** Data contracts are enforced using validated DTOs for inputs and transformed Entities for outputs.
+
+## Directory Structure & Purpose
+
+- **`apps/nest/`**: Main application entry points and configurations.
+    - Each sub-directory within `apps/` typically represents a deployable unit (e.g., a Lambda function).
+    - Contains main application module (`app.module.ts`), entry point (`main.ts`), and potentially app-specific configurations.
+    - Imports features and core functionalities from `libs`.
+- **`apps/nest/prisma/`**: Contains the Prisma schema (`schema.prisma`) and generated client/migrations.
+- **`apps/nest/libs/`**: Houses reusable modules (libraries) shared across the application(s).
+    - **`libs/{domain-name}/`** (e.g., `libs/todo/`, `libs/user/`, `libs/auth/`):
+        - Encapsulates a specific business domain.
+        - Contains `src/` directory with:
+            - `*.module.ts`: Defines the NestJS module for the domain, importing controllers, providers, and potentially other domain modules.
+            - `*.controller.ts`: Handles HTTP requests, delegates to services. (See `nestjs-controller-v2-agent.mdc`)
+            - `*.service.ts`: Contains business logic and interacts with Prisma. (See `nestjs-service-v2-agent.mdc`)
+            - `entities/*.entity.ts`: Defines response shapes and transformer/Swagger metadata. (See `nestjs-entity-v2-agent.mdc`)
+            - `dtos/*.dto.ts`: Defines Data Transfer Objects with validation rules. (See `nestjs-dto-agent.mdc`)
+            - Potentially other domain-specific components (guards, helpers).
+    - **`libs/core/`**: Contains application-wide, NestJS-specific building blocks.
+        - Global Exception Filters (e.g., `AllExceptionsFilter`)
+        - Core Interceptors (e.g., `AppCacheInterceptor`, `ClassSerializerInterceptor`)
+        - Core Guards (e.g., `JwtGuard`, base authorization logic)
+        - Custom Pipes (e.g., `ParseBigIntPipe`)
+        - Base Decorators used across features (e.g., `@CurUser()`, `@RawQuery()`, `@AppCacheKey()`, `@TransformerExposeAll()`)
+    - **`libs/helper/`**: Contains generic, framework-agnostic TypeScript/JavaScript utility functions.
+        - MUST NOT import from `@nestjs/*` or other framework-specific packages.
+        - Examples: `transform.helper.ts` (for `th.toInstanceSafe`), `object.helper.ts`.
+    - **`libs/spec/`**: Contains testing utilities, setup, helpers (e.g., `test.helper.ts`).
+- **Webpack Configurations (`webpack-*.config.js`)**: Custom configurations tailored for optimizing bundle sizes for serverless deployment.
+
+## Critical Rules
+
+- **Library Structure:** Adhere to the defined purpose of each library type (`domain`, `core`, `helper`).
+- **No Barrel Exports:** Libraries MUST NOT use `index.ts` files to export their contents. All imports between libraries or from `apps` to `libs` MUST use direct file paths (e.g., `import { TodoService } from '@app/todo/src/todo.service';`). This is crucial for Webpack optimization and preventing circular dependencies.
+- **Prisma Location:** Prisma schema and client generation are centralized in `apps/nest/prisma/`.
+- **Prisma Interaction:** Database interactions using Prisma should primarily occur within domain **Services** (`libs/{domain-name}/src/*.service.ts`).
+- **DTO Validation:** Input data validation using `class-validator` MUST occur in DTOs (`libs/{domain-name}/src/dtos/*.dto.ts`).
+- **Response Transformation:** Services MUST transform data to Entity instances using `th.toInstanceSafe` / `th.toInstancesSafe` before returning to the controller, unless the specific controller route uses `@TransformerExposeAll()`. (See `nestjs-service-agent.mdc`).
+- **Dependency Flow:**
+    - `apps/*` depends on `libs/*`.
+    - `libs/{domain-name}` can depend on `libs/core`, `libs/helper`, and other `libs/{domain-name}`.
+    - `libs/core` can depend on `libs/helper`.
+    - `libs/helper` MUST NOT depend on any other `libs/*` or `apps/*`.
+- **Configuration:** Use environment variables (`.env.*`) managed according to environment (`dev`, `spec`, etc.) and loaded via NestJS `ConfigModule` (likely configured in `apps/nest/src/app.module.ts` or `libs/core`).
+- **Testing Strategy:** Prioritize end-to-end (e2e) or integration tests that interact with the application at the controller level, simulating real API requests. These tests typically reside in the `test/` directory within the corresponding domain library (e.g., `libs/{domain-name}/test/{domain-name}.e2e-spec.ts`). While unit tests for complex helpers or utilities are acceptable, the main focus for feature testing is at the API boundary.
+
+## Example Module Structure (`libs/todo/`)
+
+```plaintext
+l libs/todo/
+  ├── src/
+  │   ├── dtos/
+  │   │   ├── create-todo.dto.ts
+  │   │   ├── query-todo.dto.ts
+  │   │   └── update-todo.dto.ts
+  │   ├── entities/
+  │   │   └── todo.entity.ts
+  │   ├── todo.controller.ts
+  │   ├── todo.module.ts
+  │   └── todo.service.ts
+  ├── test/
+  │   └── todo.e2e-spec.ts
+  └── tsconfig.lib.json
+``` 

@@ -1,0 +1,111 @@
+---
+description: "This rule defines standards for creating and managing NestJS Entity classes, primarily used for defining the shape of data in API responses and ensuring consistency with the Prisma schema. Apply this rule when: (1) Creating a new entity class (`*.entity.ts`), (2) Modifying an existing entity class, (3) Defining the structure of data returned by services or controllers, (4) Ensuring Swagger documentation accurately reflects response models. This rule governs structure, decorators, naming, and relationship handling, referencing the `prisma.schema` as the source of truth for database structure."
+globs: apps/nest/libs/**/*.entity.ts
+alwaysApply: false
+---
+
+# NestJS Entity Standards
+
+## Critical Rules
+
+- **Purpose:** Entity classes define the structure and metadata (for Swagger and `class-transformer`) of data objects, typically representing database records as they are exposed through the API. They are distinct from Prisma models but should align closely with them.
+- **Location & Naming:** Entity files MUST be placed in the `libs/{feature}/src/entities/` directory and named `{entity-name}.entity.ts`.
+- **Base Structure:** Entities MUST be TypeScript classes.
+- **Prisma Alignment:** Entities SHOULD reflect the structure defined in the `prisma.schema` for the corresponding model.
+- **Standard Fields:** Entities MUST include standard fields mirroring the Prisma schema:
+    - `id: bigint`
+    - `createdAt: Date`
+    - `updatedAt: Date`
+    - `profileId: bigint` (if applicable, reflecting the profile-centric design)
+- **Decorators (Required for all exposed properties):**
+    - `@Expose()`: From `class-transformer`. Marks the property to be included during transformation (e.g., `plainToInstance`). Essential for ensuring properties are included in API responses when using interceptors like `ClassSerializerInterceptor`.
+    - `@ApiProperty()`: From `@nestjs/swagger`. Documents the property in Swagger UI. Configure options as needed:
+        - `description`: Briefly describe the property.
+        - `type`: Specify the TypeScript type (e.g., `String`, `Number`, `Boolean`, `Date`). For relations or nested objects, use `() => RelatedEntity`.
+        - `required`: Boolean, defaults based on TypeScript type (use `false` for optional `?` properties).
+        - `nullable`: Boolean, indicate if `null` is a valid value.
+        - `example`: Provide a sample value.
+- **Relations:**
+    - Define relations at the bottom of the class under a `// Relations` comment.
+    - Mirror the relation fields defined in `prisma.schema`.
+    - For related entities (objects or arrays of objects), you MUST use:
+        - `@ApiProperty({ type: () => RelatedEntity })`: To correctly document the nested type in Swagger.
+        - `@Type(() => RelatedEntity)`: From `class-transformer`. Crucial for enabling `class-transformer` to correctly instantiate nested entity classes during transformation.
+        - `@Expose()`: To ensure the relation is included in the output.
+- **No Validation:** Entities MUST NOT contain `class-validator` decorators (e.g., `@IsNotEmpty()`, `@IsString()`). Validation belongs in DTOs.
+- **Single Export:** Each entity file MUST export only the entity class.
+
+## Examples
+
+<example>
+  ```typescript
+  // In libs/todo/src/entities/todo.entity.ts
+  import { Expose, Type } from 'class-transformer';
+  import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+  import { ProfileEntity } from '@app/profile/entities/profile.entity'; // Import related entity
+
+  export class TodoEntity {
+    @ApiProperty({ description: 'Unique identifier for the todo', example: 1n })
+    @Expose()
+    id: bigint;
+
+    @ApiProperty({ description: 'Timestamp when the todo was created' })
+    @Expose()
+    createdAt: Date;
+
+    @ApiProperty({ description: 'Timestamp when the todo was last updated' })
+    @Expose()
+    updatedAt: Date;
+
+    @ApiProperty({ description: 'The title of the todo task', example: 'Buy groceries' })
+    @Expose()
+    title: string;
+
+    @ApiPropertyOptional({ description: 'Optional description for the todo task', example: 'Milk, Eggs, Bread' })
+    @Expose()
+    description?: string; // Optional property
+
+    @ApiProperty({ description: 'Flag indicating if the todo is completed', example: false })
+    @Expose()
+    done: boolean;
+
+    @ApiProperty({ description: 'ID of the profile this todo belongs to', example: 101n })
+    @Expose()
+    profileId: bigint; // Foreign key
+
+    // Relations
+    @ApiProperty({ type: () => ProfileEntity, description: 'The profile associated with this todo' })
+    @Type(() => ProfileEntity) // Required for class-transformer to instantiate ProfileEntity
+    @Expose()
+    profile: ProfileEntity; // Related entity
+  }
+  ```
+</example>
+
+<example type="invalid">
+  ```typescript
+  // Bad Example: Incorrect location/naming, missing decorators, includes validation
+  // In libs/todo/src/models/todos.model.ts
+
+  import { IsNotEmpty, IsString } from 'class-validator'; // Validation should not be here
+  import { Profile } from './profile'; // Incorrect import/type
+
+  export class Todo {
+    // Missing @ApiProperty and @Expose
+    id: number; // Should be bigint
+
+    @IsNotEmpty() // Validation decorator in entity
+    @IsString()
+    title: string;
+
+    // Missing @ApiProperty and @Expose
+    created: Date; // Inconsistent naming (should be createdAt)
+    // Missing updatedAt
+
+    // Missing profileId
+
+    // Missing @ApiProperty, @Expose, and @Type decorators for relation
+    profile: Profile; // Relation incorrectly typed/decorated
+  }
+  ```
+</example> 

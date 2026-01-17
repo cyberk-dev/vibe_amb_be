@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "apps/api/src",
+  "compilerOptions": {
+    "deleteOutDir": true,
+    "webpack": true,
+    "tsConfigPath": "apps/api/tsconfig.app.json",
+    "plugins": [
+      {
+        "name": "@nestjs/swagger/plugin",
+        "options": {
+          "classValidatorShim": true
+        }
+      }
+    ]
+  },
+  "generatorOptions": {
+    "spec": false
+  },
+  "monorepo": true,
+  "root": "apps/api",
+  "projects": {
+    "api": {
+      "type": "application",
+      "root": "apps/api",
+      "entryFile": "main",
+      "sourceRoot": "apps/api/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/api/tsconfig.app.json"
+      }
+    },
+    "auth": {
+      "type": "library",
+      "root": "libs/auth",
+      "entryFile": "index",
+      "sourceRoot": "libs/auth/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/auth/tsconfig.lib.json"
+      }
+    },
+    "core": {
+      "type": "library",
+      "root": "libs/core",
+      "entryFile": "index",
+      "sourceRoot": "libs/core/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/core/tsconfig.lib.json"
+      }
+    },
+    "profile": {
+      "type": "library",
+      "root": "libs/profile",
+      "entryFile": "index",
+      "sourceRoot": "libs/profile/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/profile/tsconfig.lib.json"
+      }
+    },
+    "user": {
+      "type": "library",
+      "root": "libs/user",
+      "entryFile": "index",
+      "sourceRoot": "libs/user/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/user/tsconfig.lib.json"
+      }
+    },
+    "mailer": {
+      "type": "library",
+      "root": "libs/mailer",
+      "entryFile": "index",
+      "sourceRoot": "libs/mailer/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/mailer/tsconfig.lib.json"
+      }
+    },
+    "spec": {
+      "type": "library",
+      "root": "libs/spec",
+      "entryFile": "index",
+      "sourceRoot": "libs/spec/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/spec/tsconfig.lib.json"
+      }
+    },
+    "helper": {
+      "type": "library",
+      "root": "libs/helper",
+      "entryFile": "index",
+      "sourceRoot": "libs/helper/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/helper/tsconfig.lib.json"
+      }
+    },
+    "todo": {
+      "type": "library",
+      "root": "libs/todo",
+      "entryFile": "index",
+      "sourceRoot": "libs/todo/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/todo/tsconfig.lib.json"
+      }
+    }
+  }
+}

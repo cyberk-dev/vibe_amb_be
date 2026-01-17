@@ -1,0 +1,204 @@
+---
+description: "This rule defines standards for creating Data Transfer Objects (DTOs) in the NestJS application. Apply this rule when creating or modifying any DTO file (`*.dto.ts`). It ensures consistency in naming, structure, validation, type safety (especially for query params), and Swagger documentation, referencing Prisma schema and entity files where applicable."
+globs: apps/nest/libs/**/*.dto.ts
+alwaysApply: false
+---
+
+# NestJS DTO Guidelines
+
+## Critical Rules
+
+- **Naming Conventions:**
+    - Create: `create-{entity-name}.dto.ts`
+    - Update: `update-{entity-name}.dto.ts`
+    - Query: `query-{entity-name}.dto.ts`
+    - Response: `{action}-{entity-name}.res.dto.ts` or `{entity-name}.res.dto.ts`
+- **Validation:**
+    - All input DTOs (Create, Update, Query, specific action DTOs) MUST use `class-validator` decorators for input validation.
+    - Check `apps/nest/prisma/schema.prisma` and corresponding `libs/**/entities/*.entity.ts` files to ensure correct data types and validation rules (e.g., string length, number range).
+- **Transformation & Exposure:**
+    - Use `@Expose()` from `class-transformer` for all properties intended to be part of the DTO.
+    - For Query DTOs, string-based query parameters (like numbers, booleans) MUST use `@Type(() => TargetType)` from `class-transformer` for correct type coercion.
+- **Swagger Documentation:**
+    - All DTO properties MUST have `@ApiProperty()` or `@ApiPropertyOptional()` decorators for clear API documentation.
+- **Inheritance:**
+    - Redefining a property in a subclass will cause it to lose decorators from the parent class. If a property is not redefined (e.g., when using `PickType`, `PartialType`), its decorators are inherited and adjusted (like becoming optional with `PartialType`).
+- **Create DTOs (`create-*.dto.ts`):**
+    - Define properties required to create a new entity.
+    - Exclude auto-generated fields like `id`, `createdAt`, `updatedAt`.
+    - Exclude `profileId` if it's automatically added by the service based on the current user.
+    - Apply specific validation decorators (`@IsNotEmpty()`, `@IsString()`, `@IsEmail()`, etc.).
+- **Update DTOs (`update-*.dto.ts`):**
+    - Typically use `PickType` to select updatable fields from the `Create*Dto` into an internal underscore-prefixed class (e.g., `_UpdateTodoDto`).
+    - Export a final class that extends `PartialType` applied to the internal class, making all fields optional.
+    - Remember to re-apply all validation, transformation, and Swagger decorators.
+- **Query DTOs (`query-*.dto.ts`):**
+    - Define standard query parameters:
+        - `where`: Object for filtering (use custom validators like `IsIncludeOnlyKeys` if needed).
+        - `sort`: Object for sorting (e.g., `{ field: 'asc' | 'desc' }`).
+        - `select`: Array of strings for selecting specific fields.
+        - `include`: Array of strings for including relations.
+        - `skip`: Number for pagination offset.
+        - `take`: Number for pagination limit.
+    - Use `@Type(() => Number)` for `skip` and `take`.
+    - Use `@IsOptional()` for all query parameters.
+- **Response DTOs (`*.res.dto.ts`):**
+    - Define the shape of specific API responses if different from the standard Entity. Often used for aggregation or simplified views.
+    - Primarily use `@ApiProperty()` and `@Expose()`. Validation decorators are usually not needed.
+- **General:**
+    - One export per file.
+    - Maintain consistency with existing DTOs in the project.
+
+## Examples
+
+<example>
+  ```typescript
+  // --- libs/todo/src/dtos/create-todo.dto.ts ---
+  import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+  import { Expose } from 'class-transformer';
+  import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+  import { TodoStatus } from '@prisma/client'; // Import status from prisma
+
+  export class CreateTodoDto {
+    @ApiProperty({ description: 'The title of the todo', maxLength: 100 })
+    @IsString()
+    @IsNotEmpty()
+    @MaxLength(100)
+    @Expose()
+    title: string;
+
+    @ApiPropertyOptional({ description: 'Optional description for the todo' })
+    @IsString()
+    @IsOptional()
+    @Expose()
+    description?: string;
+
+    // Status is likely set by default or business logic, not client
+  }
+
+  // --- libs/todo/src/dtos/update-todo.dto.ts ---
+  import { PartialType, PickType, ApiPropertyOptional } from '@nestjs/swagger';
+  import { CreateTodoDto } from './create-todo.dto';
+  import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+  import { Expose } from 'class-transformer';
+  import { TodoStatus } from '@prisma/client';
+
+  // Pick fields that can be updated
+  class _UpdateTodoDto extends PickType(CreateTodoDto, ['title', 'description']) {
+     // Add fields specific to update, like status
+     @ApiPropertyOptional({ enum: TodoStatus, description: 'Status of the todo' })
+     @IsEnum(TodoStatus)
+     @IsOptional()
+     @Expose()
+     status?: TodoStatus;
+  }
+
+  // Make all picked fields optional via PartialType. Decorators are inherited.
+  export class UpdateTodoDto extends PartialType(_UpdateTodoDto) {}
+
+
+  // --- libs/todo/src/dtos/query-todo.dto.ts ---
+  import { IsIncludeOnlyKeys, IsIncludeOnlyValues } from '@app/helper/class.validator';
+  import { ApiPropertyOptional } from '@nestjs/swagger';
+  import { Prisma, TodoStatus } from '@prisma/client';
+  import { Expose, Type } from 'class-transformer';
+  import { IsOptional, IsNumber, IsObject, IsArray, IsEnum } from 'class-validator';
+
+  const TodoScalarFields = Object.values(Prisma.TodoScalarFieldEnum);
+  const TodoRelationFields = ['profile']; // Example relation
+  const TodoSortOrders = Object.values(Prisma.SortOrder);
+  const TodoFilterableFields = [...TodoScalarFields, /* add specific relation fields if needed */];
+
+  export class QueryTodoDto {
+    @ApiPropertyOptional({ description: 'Filter criteria based on Todo fields', type: 'object' })
+    @IsOptional()
+    @IsObject()
+    // Consider a more specific validation type if possible
+    @Expose()
+    where?: Prisma.TodoWhereInput; // Use Prisma type for complex where
+
+    @ApiPropertyOptional({ description: 'Sorting criteria (field: asc|desc)', type: 'object' })
+    @IsOptional()
+    @IsObject()
+    @IsIncludeOnlyKeys(TodoScalarFields) // Allow sorting only by scalar fields
+    @IsIncludeOnlyValues(TodoSortOrders)
+    @Expose()
+    sort?: { [key in Prisma.TodoScalarFieldEnum]?: Prisma.SortOrder };
+
+    @ApiPropertyOptional({ description: 'Select specific fields to return', type: [String] })
+    @IsOptional()
+    @IsArray()
+    @IsIncludeOnlyKeys(TodoScalarFields)
+    @Expose()
+    select?: Prisma.TodoScalarFieldEnum[];
+
+    @ApiPropertyOptional({ description: 'Include relations', type: [String] })
+    @IsOptional()
+    @IsArray()
+    @IsIncludeOnlyKeys(TodoRelationFields)
+    @Expose()
+    include?: string[];
+
+    @ApiPropertyOptional({ description: 'Number of records to skip (pagination)' })
+    @IsOptional()
+    @IsNumber()
+    @Type(() => Number) // MUST use Type decorator for query params
+    @Expose()
+    skip?: number;
+
+    @ApiPropertyOptional({ description: 'Number of records to take (pagination)' })
+    @IsOptional()
+    @IsNumber()
+    @Type(() => Number) // MUST use Type decorator for query params
+    @Expose()
+    take?: number;
+  }
+  ```
+</example>
+
+<example type="invalid">
+  ```typescript
+  import { ApiProperty } from '@nestjs/swagger';
+
+  // Bad: Missing validation decorators (class-validator)
+  // Bad: Missing @Expose() decorators (class-transformer)
+  // Bad: Query DTO properties missing @Type() for number coercion
+  export class BadCreateDto {
+    @ApiProperty()
+    title: string; // Missing @IsNotEmpty, @IsString, @MaxLength, @Expose
+
+    description: string; // Missing @ApiPropertyOptional, @IsOptional, @IsString, @Expose
+  }
+
+  export class BadQueryDto {
+      // Bad: Missing @Type(() => Number)
+      @ApiPropertyOptional()
+      @IsOptional()
+      @IsNumber()
+      @Expose()
+      skip?: number;
+
+      // Bad: Missing @Type(() => Number)
+      @ApiPropertyOptional()
+      @IsOptional()
+      @IsNumber()
+      @Expose()
+      limit?: number; // Bad: Should be 'take' for consistency with Prisma
+
+      // Bad: 'filter' is too generic, prefer 'where'
+      @ApiPropertyOptional()
+      @IsOptional()
+      @IsObject()
+      @Expose()
+      filter?: any;
+  }
+
+  // Bad: Update DTO not using PartialType/PickType, missing optionality and decorators
+  export class BadUpdateDto {
+      @ApiProperty()
+      @IsString() // Missing @IsOptional
+      @Expose()
+      title: string;
+  }
+  ```
+</example> 

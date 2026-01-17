@@ -1,0 +1,6 @@
+# This file defines code owners for different paths
+# Format: <file-pattern> <owner1> <owner2> ... <ownerN>
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Assign all files to phongvv-cyberk as reviewer
+* @phongvv-cyberk
