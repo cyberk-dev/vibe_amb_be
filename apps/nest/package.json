@@ -43,7 +43,10 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/platform-socket.io": "^10.4.22",
+    "@nestjs/schedule": "^6.1.0",
     "@nestjs/swagger": "^8.1.1",
+    "@nestjs/websockets": "^10.4.22",
     "@prisma/client": "^6.2.1",
     "@sendgrid/mail": "^8.1.4",
     "@vendia/serverless-express": "^4.12.6",
@@ -69,6 +72,7 @@
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
     "siwe": "^3.0.0",
+    "socket.io": "^4.8.3",
     "swagger-ui-dist": "^5.18.3",
     "validator": "^13.12.0"
   },
